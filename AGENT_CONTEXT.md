@@ -2,6 +2,12 @@
 
 Welcome! This workspace is a curated set of tools designed to give an AI agent the capabilities needed to monitor systems, manage files, diagnose networks, and perform professional-grade data science.
 
+## ⚠️ Critical Rule — Think, Then Act
+
+After thinking through a plan, you MUST make a tool call. Do NOT just describe what you would do — actually call the tool.
+**Thinking without a tool call is always wrong unless you are delivering a final answer to the user.**
+Every step of the Golden Workflow requires a real tool call. Never skip a step by just describing it in your thinking.
+
 ## 🎯 The Goal
 
 The objective is to provide a reliable, automated pipeline for turning raw data into actionable insights while maintaining a clean and organized environment.
@@ -140,7 +146,7 @@ When calling a tool, you MUST populate the `args` field with the actual argument
 
 CORRECT:
 - explore_dataset → args: "C:/path/to/file.csv"
-- clean_dataset → args: "C:/path/to/file.csv"  
+- clean_dataset → args: "C:/path/to/file.csv"
 - draw_scatter_plot → args: "TWS BSP \"True Wind Speed\" \"Boat Speed\""
 
 WRONG (never do this):
@@ -158,6 +164,8 @@ If you are asked to analyze a CSV, **do not guess**. Follow this exact sequence:
 2. **Reset**: If you are switching to a new file, run `clear_datasets.py` first.
 3. **Clean**: Run `clean_dataset.py`. This ensures the data is sane and saves it to `clean_data.csv`.
 4. **Visualize**: Use any of the graphing tools. They will automatically use the cleaned data.
+
+Each step MUST be an actual tool call. Do not skip a step or describe it without calling it.
 
 ## 📋 Pro-Tips for the Agent
 
