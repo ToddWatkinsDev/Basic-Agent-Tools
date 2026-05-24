@@ -153,7 +153,7 @@ def chat(user_message: str, show_thinking: bool = False):
         if not show_thinking:
             print("🤔 Thinking...")
 
-        force_answer = repeat_count >= 2
+        force_answer = repeat_count >= 3
         msg = get_response(messages, force_answer, show_thinking)
 
         if not msg.tool_calls:

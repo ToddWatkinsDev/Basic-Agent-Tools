@@ -20,6 +20,7 @@ TOOLSETS = {
     ],
     'file_utilities': [
         'tools/file/create_directory.py',
+        'tools/file/create_file.py',
         'tools/file/delete_file.py',
         'tools/file/file_size.py',
         'tools/file/list_files.py',
