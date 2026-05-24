@@ -66,6 +66,7 @@ The "Guardrail" layer. No analysis should happen without this.
 ### Graphing & Analysis (`tools/graphing/`)
 
 Turning numbers into visuals.
+Note all graphing utilities use the `clean_data.csv` file, and will not work with anything else
 
 - **clear_plots.py**: Deletes all generated PNG plot files in the current directory.
 - **draw_bar_plot.py**: Visualizes the average value of a numeric variable across categories. **Inputs**: `Dataset path, X column, Y column, X label, Y label.`
