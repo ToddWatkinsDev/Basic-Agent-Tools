@@ -1,0 +1,21 @@
+# ── Core Agent ──────────────────────────────────────────────
+openai>=1.0.0          # Ollama-compatible OpenAI client for agent loop
+
+# ── Data Science ─────────────────────────────────────────────
+pandas>=2.0.0          # tools/data/* and tools/graphing/*
+numpy>=1.26.0          # statistical calculations (used by pandas/seaborn)
+
+# ── Visualisation ────────────────────────────────────────────
+matplotlib>=3.7.0      # tools/graphing/* (all plot types)
+seaborn>=0.13.0        # tools/graphing/draw_heatmap.py, draw_joint_plot.py etc.
+
+# ── System / Network ─────────────────────────────────────────
+psutil>=5.9.0          # tools/system/get_cpu_usage.py, get_memory_usage.py etc.
+requests>=2.31.0       # tools/network/fetch_url.py, download_file.py
+beautifulsoup4>=4.12.0 # tools/web/scrape_html.py
+
+# ── ML ───────────────────────────────────────────────────────
+scikit-learn>=1.3.0    # tools/ml/train_linear_model.py
+
+# ── Standard library (no install needed) ─────────────────────
+# subprocess, os, sys, socket, math, statistics — all built-in
