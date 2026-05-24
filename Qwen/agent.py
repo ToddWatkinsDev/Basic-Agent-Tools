@@ -11,7 +11,7 @@ import subprocess, json
 
 client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
 
-with open("AGENT_CONTEXT.md", "r", encoding="utf-8") as f:
+with open("qwen/AGENT_CONTEXT.md", "r", encoding="utf-8") as f:
     system_prompt = f.read()
 
 def build_tools():
@@ -54,7 +54,7 @@ def get_response(messages, force_answer: bool, show_thinking: bool):
         # Streaming mode — print thinking in real time
         print("\n💭 Thinking:\n")
         stream = client.chat.completions.create(
-            model="qwen3:4b",
+            model="qwen3:4b",#qwen3:8b(Bigger Model), qwen3:4b(medium), qwen3:1.7b(small)
             messages=messages,
             tools=build_tools(),
             tool_choice="none" if force_answer else "auto",
