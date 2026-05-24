@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, shlex
 
 # Fix paths — must be before any local imports
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -42,7 +42,8 @@ def run_tool(tool_name: str, args: str = "") -> str:
     for category, paths in TOOLSETS.items():
         for path in paths:
             if path.split("/")[-1].replace(".py", "") == tool_name:
-                cmd = ["python", path] + (args.split() if args else [])
+                # Use shlex.split so quoted paths with spaces are handled correctly
+                cmd = ["python", path] + (shlex.split(args) if args else [])
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 return result.stdout or result.stderr
     return f"Unknown tool: {tool_name}"
