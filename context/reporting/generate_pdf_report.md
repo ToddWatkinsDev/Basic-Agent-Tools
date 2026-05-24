@@ -1,0 +1,1 @@
+# generate_pdf_report.py\nPurpose: Compile text and plots to report.\nInputs: text_summary (str), output_name (str)\nOutputs: Returns success message.\nUsage: Execute `generate_pdf_report` for intended functionality.\n

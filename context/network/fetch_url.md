@@ -1,0 +1,1 @@
+# fetch_url.py\nPurpose: Make HTTP GET request and return response.\nInputs: url (str)\nOutputs: Returns text/JSON response.\nUsage: Execute `fetch_url` for intended functionality.\n

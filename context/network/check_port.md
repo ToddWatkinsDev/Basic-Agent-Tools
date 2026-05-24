@@ -1,0 +1,1 @@
+# check_port.py\nPurpose: Check if specific port is open.\nInputs: host (str), port (int)\nOutputs: Returns true if open, else false.\nUsage: Execute `check_port` for intended functionality.\n

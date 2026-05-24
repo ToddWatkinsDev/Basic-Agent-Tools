@@ -1,0 +1,1 @@
+# create_directory.py\nPurpose: Safely create nested directories.\nInputs: dirpath (str): Path of directory to create.\nOutputs: Returns success message.\nUsage: Execute `create_directory` for intended functionality.\n

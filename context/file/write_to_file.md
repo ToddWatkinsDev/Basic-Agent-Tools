@@ -1,0 +1,1 @@
+# write_to_file.py\nPurpose: Create new file or append text.\nInputs: filepath (str), content (str), append (bool)\nOutputs: Returns success message.\nUsage: Execute `write_to_file` for intended functionality.\n

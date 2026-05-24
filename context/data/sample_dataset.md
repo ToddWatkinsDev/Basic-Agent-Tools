@@ -1,0 +1,1 @@
+# sample_dataset.py\nPurpose: Extract random subset of dataset.\nInputs: input_file (str), n (int), output_file (str)\nOutputs: Returns success message.\nUsage: Execute `sample_dataset` for intended functionality.\n

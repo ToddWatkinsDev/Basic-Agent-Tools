@@ -1,0 +1,1 @@
+# kill_process.py\nPurpose: Terminate a process by PID.\nInputs: pid (int): Process ID to kill.\nOutputs: Returns success or error message.\nUsage: Execute `kill_process` for intended functionality.\n

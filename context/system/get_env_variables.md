@@ -1,0 +1,1 @@
+# get_env_variables.py\nPurpose: Read a specific environment variable.\nInputs: var_name (str): The name of the environment variable to fetch.\nOutputs: Returns the variable value or 'Not found'.\nUsage: Execute `get_env_variables` for intended functionality.\n

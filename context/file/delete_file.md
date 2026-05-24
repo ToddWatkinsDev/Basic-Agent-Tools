@@ -1,0 +1,1 @@
+# delete_file.py\nPurpose: Safely delete a specific file.\nInputs: filepath (str)\nOutputs: Returns success message.\nUsage: Execute `delete_file` for intended functionality.\n

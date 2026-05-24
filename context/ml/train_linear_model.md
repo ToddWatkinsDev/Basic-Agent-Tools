@@ -1,0 +1,1 @@
+# train_linear_model.py\nPurpose: Fit linear regression to clean_data.csv.\nInputs: x_col (str), y_col (str)\nOutputs: Returns model coefficients and R2 score.\nUsage: Execute `train_linear_model` for intended functionality.\n

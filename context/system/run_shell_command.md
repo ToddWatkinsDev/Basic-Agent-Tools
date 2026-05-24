@@ -1,0 +1,1 @@
+# run_shell_command.py\nPurpose: Execute a raw terminal command.\nInputs: command (str): The command to run.\nOutputs: Returns stdout and stderr.\nUsage: Execute `run_shell_command` for intended functionality.\n

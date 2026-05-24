@@ -1,0 +1,1 @@
+# list_processes.py\nPurpose: List top running processes.\nInputs: None.\nOutputs: Returns string of top 10 processes.\nUsage: Execute `list_processes` for intended functionality.\n

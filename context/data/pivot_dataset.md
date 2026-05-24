@@ -1,0 +1,1 @@
+# pivot_dataset.py\nPurpose: Create pivot table.\nInputs: input_file (str), index_col (str), val_col (str), func (str)\nOutputs: Returns success message.\nUsage: Execute `pivot_dataset` for intended functionality.\n

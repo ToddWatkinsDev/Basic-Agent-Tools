@@ -1,0 +1,1 @@
+# scrape_html.py\nPurpose: Extract readable text from URL.\nInputs: url (str)\nOutputs: Returns text content.\nUsage: Execute `scrape_html` for intended functionality.\n

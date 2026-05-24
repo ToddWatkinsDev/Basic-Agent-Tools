@@ -1,0 +1,1 @@
+# get_os_info.py\nPurpose: Fetch OS version and architecture.\nInputs: None.\nOutputs: Returns string of OS details.\nUsage: Execute `get_os_info` for intended functionality.\n

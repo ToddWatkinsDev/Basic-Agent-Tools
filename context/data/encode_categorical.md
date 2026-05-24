@@ -1,0 +1,1 @@
+# encode_categorical.py\nPurpose: Convert text categories to numeric.\nInputs: input_file (str), column (str)\nOutputs: Returns success message.\nUsage: Execute `encode_categorical` for intended functionality.\n

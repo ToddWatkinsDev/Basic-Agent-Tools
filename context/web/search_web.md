@@ -1,0 +1,1 @@
+# search_web.py\nPurpose: Search a query and return text.\nInputs: query (str)\nOutputs: Returns top search results.\nUsage: Execute `search_web` for intended functionality.\n

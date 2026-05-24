@@ -1,0 +1,1 @@
+# get_network_interfaces.py\nPurpose: List local network adapters.\nInputs: None\nOutputs: Returns network config.\nUsage: Execute `get_network_interfaces` for intended functionality.\n

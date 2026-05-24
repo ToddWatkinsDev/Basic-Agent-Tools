@@ -1,0 +1,1 @@
+# convert_format.py\nPurpose: Convert between CSV, JSON, Parquet.\nInputs: input_file (str), output_file (str)\nOutputs: Returns success message.\nUsage: Execute `convert_format` for intended functionality.\n

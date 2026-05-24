@@ -1,0 +1,1 @@
+# read_file.py\nPurpose: Read contents of a file.\nInputs: filepath (str): Path to file.\nOutputs: Returns file content.\nUsage: Execute `read_file` for intended functionality.\n

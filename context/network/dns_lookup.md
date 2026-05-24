@@ -1,0 +1,1 @@
+# dns_lookup.py\nPurpose: Resolve domain to IP addresses.\nInputs: domain (str)\nOutputs: Returns list of IP addresses.\nUsage: Execute `dns_lookup` for intended functionality.\n

@@ -1,0 +1,1 @@
+# extract_archive.py\nPurpose: Unzip or extract compressed archives.\nInputs: filepath (str), dest_dir (str)\nOutputs: Returns success message.\nUsage: Execute `extract_archive` for intended functionality.\n
