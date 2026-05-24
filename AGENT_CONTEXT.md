@@ -134,6 +134,21 @@ Extract compressed files.
 - **extract_archive.py**: Extracts the contents of a `.zip`, `.tar.gz`, or similar archive to a target directory.
 
 ---
+## Tool Call Format
+
+When calling a tool, you MUST populate the `args` field with the actual arguments as a quoted string.
+
+CORRECT:
+- explore_dataset → args: "C:/path/to/file.csv"
+- clean_dataset → args: "C:/path/to/file.csv"  
+- draw_scatter_plot → args: "TWS BSP \"True Wind Speed\" \"Boat Speed\""
+
+WRONG (never do this):
+- explore_dataset → args: ""   ← empty args will always fail
+- clean_dataset → args: ""     ← never leave args blank when a path is needed
+
+The args field is exactly what gets passed to the script on the command line.
+If you know the file path, put it in args. Do not leave it empty.
 
 ## 🔄 The Golden Workflow (Data Analysis)
 

@@ -29,7 +29,7 @@ def build_tools():
                         "properties": {
                             "args": {
                                 "type": "string",
-                                "description": "Space-separated command line arguments (leave empty if none needed)"
+                                "description": "Space-separated command line arguments, Never leave empty if the tool needs a path or any argument. If no arguments are needed, pass an empty string."
                             }
                         },
                         "required": []
