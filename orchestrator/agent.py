@@ -10,7 +10,7 @@ from toolsets import TOOLSETS
 
 client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
 
-with open("AGENT_CONTEXT.md", "r", encoding="utf-8") as f:
+with open("orchestrator/AGENT_PROMPT.md", "r", encoding="utf-8") as f:
     agent_context = f.read()
 
 # ─────────────────────────────────────────────
