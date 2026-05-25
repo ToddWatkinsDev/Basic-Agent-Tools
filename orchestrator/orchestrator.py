@@ -16,13 +16,32 @@ with open("orchestrator/AGENT_PROMPT.md", "r", encoding="utf-8") as f:
 with open("orchestrator/ORCHESTRATOR_PROMPT.md", "r", encoding="utf-8") as f:
     ORCHESTRATOR_PROMPT = f.read()
 
+# Map the short worker names used in ORCHESTRATOR_PROMPT to TOOLSETS keys.
+# This lets the prompt stay readable while toolsets.py uses descriptive names.
+WORKER_CATEGORY_MAP = {
+    "archive":   "archive_utilities",
+    "data":      "data_utilities",
+    "file":      "file_utilities",
+    "graphing":  "graphing_utilities",
+    "math":      "math_utilities",
+    "ml":        "ml_utilities",
+    "network":   "network_utilities",
+    "reporting": "reporting_utilities",
+    "system":    "system_utilities",
+    "web":       "web_utilities",
+}
+
+def resolve_category(name: str) -> str:
+    """Accept either the short prompt name or the full toolsets key."""
+    return WORKER_CATEGORY_MAP.get(name, name)
+
 # ─────────────────────────────────────────────
 # WORKER SETUP
 # ─────────────────────────────────────────────
 def build_tools_for_worker(category: str):
     """Return only the tools belonging to this worker's category."""
     tools = []
-    for path, description in TOOLSETS.get(category, []):
+    for path, description in TOOLSETS.get(resolve_category(category), []):
         script_name = path.split("/")[-1].replace(".py", "")
         tools.append({
             "type": "function",
@@ -63,7 +82,7 @@ def run_worker(category: str, task: str) -> str:
     """Spin up a worker agent for a single task. Returns a summary of what it did."""
     tools = build_tools_for_worker(category)
     if not tools:
-        return f"No tools found for worker category: {category}"
+        return f"No tools found for worker category: {category} (resolved: {resolve_category(category)})"
 
     worker_system = (
         f"You are a focused worker agent. You have ONE job: complete the task below using your tools.\n"
