@@ -16,7 +16,6 @@ with open("orchestrator/AGENT_PROMPT.md", "r", encoding="utf-8") as f:
 with open("orchestrator/ORCHESTRATOR_PROMPT.md", "r", encoding="utf-8") as f:
     ORCHESTRATOR_PROMPT = f.read()
 
-# Map the short worker names used in ORCHESTRATOR_PROMPT to TOOLSETS keys.
 WORKER_CATEGORY_MAP = {
     "archive":   "archive_utilities",
     "data":      "data_utilities",
@@ -34,30 +33,19 @@ def resolve_category(name: str) -> str:
     return WORKER_CATEGORY_MAP.get(name, name)
 
 def _args_hint(description: str) -> str:
-    """Extract the Args/Example line from a tool description for use as the args field hint."""
     for line in description.split("."):
         if "Args:" in line or "Example:" in line:
             return line.strip()
     return "Provide the required arguments as a space-separated string. Never leave empty if the tool needs input."
 
 def extract_args(arguments_json: str) -> str:
-    """Robustly extract the args string from the model's tool call JSON.
-
-    Small models (qwen3:1.7b) sometimes ignore the schema and invent parameter
-    names like num1/num2, a/b, n1, numbers, query, etc. instead of using 'args'.
-    This function normalises ALL of those cases into a single args string so the
-    tool script receives its expected command-line arguments regardless of what
-    the model decided to call the parameters.
-    """
+    """Normalise any parameter names the model invents into a single args string."""
     try:
         params = json.loads(arguments_json)
     except (json.JSONDecodeError, TypeError):
         return ""
-
     if "args" in params:
         return str(params["args"]).strip()
-
-    # Model invented its own parameter names — join all values in declaration order.
     SKIP_KEYS = {"type", "description", "required", "properties", "schema"}
     values = [
         str(v).strip()
@@ -71,7 +59,6 @@ def extract_args(arguments_json: str) -> str:
 # WORKER SETUP
 # ─────────────────────────────────────────────
 def build_tools_for_worker(category: str):
-    """Return only the tools belonging to this worker's category."""
     tools = []
     for path, description in TOOLSETS.get(resolve_category(category), []):
         script_name = path.split("/")[-1].replace(".py", "")
@@ -119,6 +106,7 @@ def run_worker(category: str, task: str) -> str:
     worker_system = (
         f"You are a focused worker agent. You have ONE job: complete the task below using your tools.\n"
         f"IMPORTANT: Always put ALL arguments into the single 'args' field as a string, exactly as shown in the tool description.\n"
+        f"For tools that take no arguments, call them with an empty args string.\n"
         f"Once you have the result, stop — do not call the same tool again.\n"
         f"Do not explain. Call the right tool, get the result, then output your final answer.\n\n"
         f"Reference:\n{agent_context}"
@@ -131,21 +119,44 @@ def run_worker(category: str, task: str) -> str:
 
     print(f"\n  \U0001F916 Worker [{category}]: {task}")
 
-    last_call = None   # (tool_name, args) of the most recent successful tool call
-    last_result = None # last non-empty tool output
+    last_call = None
+    last_result = None
+    forced_retry = False  # have we already sent the tool-call reminder?
 
     max_steps = 8
     for step in range(max_steps):
+        # On step 0 always require a tool call.
+        # On step 1 also require if the model dodged on step 0 (forced_retry flag).
+        if step == 0 or (step == 1 and forced_retry):
+            tool_choice = "required"
+        else:
+            tool_choice = "auto"
+
         response = client.chat.completions.create(
             model="qwen3:1.7b",
             messages=messages,
             tools=tools,
-            tool_choice="required" if step == 0 else "auto",
+            tool_choice=tool_choice,
             extra_body={"think": False}
         )
         msg = response.choices[0].message
 
         if not msg.tool_calls:
+            # Step 0 with no tool call — model responded with text instead.
+            # Append a stern reminder and force tool_choice=required on next step.
+            if step == 0 and not forced_retry:
+                forced_retry = True
+                messages.append({"role": "assistant", "content": msg.content or ""})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "You must call a tool to complete this task. "
+                        "Do not answer in text — use one of the tools provided right now."
+                    )
+                })
+                continue
+
+            # Model genuinely finished — return its text answer (or last tool result)
             result = msg.content or (last_result if last_result else "Worker completed with no output.")
             print(f"  \u2705 Worker done: {result[:120]}")
             return result
@@ -167,8 +178,7 @@ def run_worker(category: str, task: str) -> str:
             args = extract_args(tc.function.arguments)
             this_call = (tc.function.name, args)
 
-            # Detect repeat: model is calling the exact same tool+args again after
-            # already receiving a valid result — it's stuck. Return the last result.
+            # Repeat-call detection: already have a good result, model is looping
             if this_call == last_call and last_result and not last_result.strip().startswith("ERROR"):
                 print(f"  \u2705 Worker done (repeat detected): {last_result[:120]}")
                 return last_result
