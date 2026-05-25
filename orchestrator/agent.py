@@ -16,57 +16,43 @@ with open("orchestrator/AGENT_PROMPT.md", "r", encoding="utf-8") as f:
 # ─────────────────────────────────────────────
 # TOOL REGISTRY
 # ─────────────────────────────────────────────
-def build_tools_for_category(category: str):
-    tools = []
-    paths = TOOLSETS.get(category, [])
-    for path in paths:
-        script_name = path.split("/")[-1].replace(".py", "")
-        tools.append({
-            "type": "function",
-            "function": {
-                "name": script_name,
-                "description": f"Runs {script_name}.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "args": {
-                            "type": "string",
-                            "description": "Space-separated command line arguments. Never leave empty if the tool needs a path or argument."
-                        }
-                    },
-                    "required": []
-                }
+def _tool_entry(path: str, description: str) -> dict:
+    """Build a single OpenAI tool definition from a (path, description) tuple."""
+    script_name = path.split("/")[-1].replace(".py", "")
+    return {
+        "type": "function",
+        "function": {
+            "name": script_name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "args": {
+                        "type": "string",
+                        "description": "Command-line arguments exactly as described above. Must not be empty if the tool requires input."
+                    }
+                },
+                "required": []
             }
-        })
-    return tools
+        }
+    }
+
+def build_tools_for_category(category: str):
+    return [
+        _tool_entry(path, description)
+        for path, description in TOOLSETS.get(category, [])
+    ]
 
 def build_all_tools():
-    tools = []
-    for category, paths in TOOLSETS.items():
-        for path in paths:
-            script_name = path.split("/")[-1].replace(".py", "")
-            tools.append({
-                "type": "function",
-                "function": {
-                    "name": script_name,
-                    "description": f"Runs {script_name}. Category: {category}.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "args": {
-                                "type": "string",
-                                "description": "Space-separated command line arguments. Never leave empty if the tool needs a path or argument."
-                            }
-                        },
-                        "required": []
-                    }
-                }
-            })
-    return tools
+    return [
+        _tool_entry(path, description)
+        for entries in TOOLSETS.values()
+        for path, description in entries
+    ]
 
 def run_tool(tool_name: str, args: str = "") -> str:
-    for category, paths in TOOLSETS.items():
-        for path in paths:
+    for entries in TOOLSETS.values():
+        for path, _ in entries:
             if path.split("/")[-1].replace(".py", "") == tool_name:
                 cmd = ["python", path] + (shlex.split(args) if args else [])
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -90,10 +76,10 @@ def chat(user_message: str, category: str = None, show_thinking: bool = False):
         {"role": "user", "content": user_message}
     ]
 
-    print(f"\n📨 Task: {user_message}")
+    print(f"\n\u{1F4E8} Task: {user_message}")
     if category:
-        print(f"🗂  Category: {category}")
-    print("─" * 50)
+        print(f"\u{1F5C2}  Category: {category}")
+    print("\u2500" * 50)
 
     max_iterations = 15
     iteration = 0
@@ -112,7 +98,7 @@ def chat(user_message: str, category: str = None, show_thinking: bool = False):
             tool_choice = "auto"
 
         if show_thinking:
-            print("\n💭 Thinking:\n")
+            print("\n\U0001F4AD Thinking:\n")
             stream = client.chat.completions.create(
                 model="qwen3:1.7b",
                 messages=messages,
@@ -136,7 +122,7 @@ def chat(user_message: str, category: str = None, show_thinking: bool = False):
 
                 if delta.content:
                     if in_thinking:
-                        print("\n\n💬 Response:\n")
+                        print("\n\n\U0001F4AC Response:\n")
                         in_thinking = False
                     print(delta.content, end="", flush=True)
                     content_buf += delta.content
@@ -170,7 +156,7 @@ def chat(user_message: str, category: str = None, show_thinking: bool = False):
             msg = FakeMessage(content_buf, reasoning_buf, fake_tcs if fake_tcs else None)
 
         else:
-            print("🤔 Working...")
+            print("\U0001F914 Working...")
             response = client.chat.completions.create(
                 model="qwen3:1.7b",
                 messages=messages,
@@ -183,7 +169,7 @@ def chat(user_message: str, category: str = None, show_thinking: bool = False):
         # ── No tool call → final answer ──
         if not msg.tool_calls:
             answer = msg.content or getattr(msg, "reasoning", None) or "No response."
-            print(f"\n✅ Done:\n{answer}")
+            print(f"\n\u2705 Done:\n{answer}")
             return answer
 
         # ── Append assistant turn ──
@@ -208,9 +194,9 @@ def chat(user_message: str, category: str = None, show_thinking: bool = False):
             repeat_count = repeat_count + 1 if current_call == last_tool_call else 0
             last_tool_call = current_call
 
-            print(f"\n🔧 {tc.function.name}({args})")
+            print(f"\n\U0001F527 {tc.function.name}({args})")
             output = run_tool(tc.function.name, args)
-            print(f"📤 {output}")
+            print(f"\U0001F4E4 {output}")
 
             messages.append({
                 "role": "tool",
@@ -218,9 +204,9 @@ def chat(user_message: str, category: str = None, show_thinking: bool = False):
                 "content": output
             })
 
-        print("─" * 50)
+        print("\u2500" * 50)
 
-    print("⚠️ Max iterations reached.")
+    print("\u26A0\uFE0F Max iterations reached.")
     return "Max iterations reached."
 
 # ─────────────────────────────────────────────

@@ -22,20 +22,19 @@ with open("orchestrator/ORCHESTRATOR_PROMPT.md", "r", encoding="utf-8") as f:
 def build_tools_for_worker(category: str):
     """Return only the tools belonging to this worker's category."""
     tools = []
-    paths = TOOLSETS.get(category, [])
-    for path in paths:
+    for path, description in TOOLSETS.get(category, []):
         script_name = path.split("/")[-1].replace(".py", "")
         tools.append({
             "type": "function",
             "function": {
                 "name": script_name,
-                "description": f"Runs {script_name}.",
+                "description": description,
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "args": {
                             "type": "string",
-                            "description": "Space-separated command line arguments. Never leave empty if the tool needs a path or argument."
+                            "description": "Command-line arguments exactly as described above. Must not be empty if the tool requires input."
                         }
                     },
                     "required": []
@@ -45,8 +44,8 @@ def build_tools_for_worker(category: str):
     return tools
 
 def run_tool(tool_name: str, args: str = "") -> str:
-    for category, paths in TOOLSETS.items():
-        for path in paths:
+    for entries in TOOLSETS.values():
+        for path, _ in entries:
             if path.split("/")[-1].replace(".py", "") == tool_name:
                 cmd = ["python", path] + (shlex.split(args) if args else [])
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -77,7 +76,7 @@ def run_worker(category: str, task: str) -> str:
         {"role": "user", "content": task}
     ]
 
-    print(f"\n  🤖 Worker [{category}]: {task}")
+    print(f"\n  \U0001F916 Worker [{category}]: {task}")
 
     max_steps = 5
     for step in range(max_steps):
@@ -92,7 +91,7 @@ def run_worker(category: str, task: str) -> str:
 
         if not msg.tool_calls:
             result = msg.content or "Worker completed with no output."
-            print(f"  ✅ Worker done: {result[:120]}")
+            print(f"  \u2705 Worker done: {result[:120]}")
             return result
 
         messages.append({
@@ -110,10 +109,10 @@ def run_worker(category: str, task: str) -> str:
 
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments).get("args", "")
-            print(f"  🔧 {tc.function.name}({args})")
+            print(f"  \U0001F527 {tc.function.name}({args})")
             output = run_tool(tc.function.name, args)
             summary = summarise_output(output)
-            print(f"  📤 {summary}")
+            print(f"  \U0001F4E4 {summary}")
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
@@ -126,11 +125,11 @@ def run_worker(category: str, task: str) -> str:
 # ORCHESTRATOR
 # ─────────────────────────────────────────────
 def orchestrate(user_message: str, show_thinking: bool = False):
-    print(f"\n📨 User: {user_message}")
-    print("─" * 50)
+    print(f"\n\U0001F4E8 User: {user_message}")
+    print("\u2500" * 50)
 
     # Step 1: Ask orchestrator to produce a plan
-    print("🧠 Orchestrator planning...\n")
+    print("\U0001F9E0 Orchestrator planning...\n")
     plan_response = client.chat.completions.create(
         model="qwen3:8b",   # swap to qwen3:4b if VRAM is tight
         messages=[
@@ -143,7 +142,7 @@ def orchestrate(user_message: str, show_thinking: bool = False):
     if show_thinking:
         thinking = getattr(plan_response.choices[0].message, "reasoning", None)
         if thinking:
-            print(f"💭 Thinking:\n{thinking}\n")
+            print(f"\U0001F4AD Thinking:\n{thinking}\n")
 
     raw_plan = plan_response.choices[0].message.content or ""
 
@@ -153,18 +152,18 @@ def orchestrate(user_message: str, show_thinking: bool = False):
     try:
         plan = json.loads(clean_plan)
     except json.JSONDecodeError:
-        print(f"❌ Orchestrator returned invalid plan:\n{raw_plan}")
+        print(f"\u274C Orchestrator returned invalid plan:\n{raw_plan}")
         return
 
-    print(f"📋 Plan ({len(plan)} steps):")
+    print(f"\U0001F4CB Plan ({len(plan)} steps):")
     for i, step in enumerate(plan):
         print(f"  {i+1}. [{step['worker']}] {step['task']}")
-    print("─" * 50)
+    print("\u2500" * 50)
 
     # Step 2: Execute plan step by step
     results = {}
     for i, step in enumerate(plan):
-        print(f"\n▶ Step {i+1}/{len(plan)}")
+        print(f"\n\u25B6 Step {i+1}/{len(plan)}")
 
         # Inject previous step's result into task if there's a dependency
         task = step["task"]
@@ -174,10 +173,10 @@ def orchestrate(user_message: str, show_thinking: bool = False):
 
         result = run_worker(step["worker"], task)
         results[i] = summarise_output(result)
-        print("─" * 50)
+        print("\u2500" * 50)
 
     # Step 3: Ask orchestrator for a final summary
-    print("\n🧠 Orchestrator summarising...\n")
+    print("\n\U0001F9E0 Orchestrator summarising...\n")
     summary_messages = [
         {"role": "system", "content": "You are a helpful assistant. Summarise what was accomplished based on the results below. Be concise."},
         {"role": "user", "content": user_message},
@@ -189,7 +188,7 @@ def orchestrate(user_message: str, show_thinking: bool = False):
         messages=summary_messages,
         extra_body={"think": False}
     )
-    print(f"\n✅ Final Summary:\n{final.choices[0].message.content}")
+    print(f"\n\u2705 Final Summary:\n{final.choices[0].message.content}")
 
 
 if __name__ == "__main__":
