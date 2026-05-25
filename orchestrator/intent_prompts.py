@@ -30,6 +30,32 @@ INTENT_PROMPTS: dict[str, tuple[list[str], str]] = {
             "After all five results are collected, stop and summarise everything clearly.\n"
         ),
     ),
+
+    "network_overview": (
+        [
+            "network overview",
+            "network info",
+            "network information",
+            "network status",
+            "network details",
+            "full network report",
+            "network summary",
+            "tell me about my network",
+            "what is my network",
+            "network diagnostics",
+        ],
+        (
+            "You are a network diagnostics agent. The user wants a FULL overview of their network.\n"
+            "You MUST call ALL of the following tools in order and report every result:\n"
+            "1. get_ip_address          — local IP address of this machine\n"
+            "2. get_network_interfaces  — all active network interfaces and their IPs\n"
+            "3. ping_host 8.8.8.8       — check internet connectivity via Google DNS\n"
+            "4. dns_lookup google.com   — verify DNS resolution is working\n"
+            "Call each tool exactly once. For ping_host pass '8.8.8.8' as args. "
+            "For dns_lookup pass 'google.com' as args. "
+            "After all four results are collected, stop and summarise the network status clearly.\n"
+        ),
+    ),
 }
 
 
