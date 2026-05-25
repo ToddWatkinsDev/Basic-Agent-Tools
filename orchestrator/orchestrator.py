@@ -31,16 +31,43 @@ WORKER_CATEGORY_MAP = {
 }
 
 def resolve_category(name: str) -> str:
-    """Accept either the short prompt name or the full toolsets key."""
     return WORKER_CATEGORY_MAP.get(name, name)
 
 def _args_hint(description: str) -> str:
-    """Extract the Args/Example line from a tool description for use as the args field hint.
-    Small models fill args correctly when the description is tool-specific rather than generic."""
+    """Extract the Args/Example line from a tool description for use as the args field hint."""
     for line in description.split("."):
         if "Args:" in line or "Example:" in line:
             return line.strip()
     return "Provide the required arguments as a space-separated string. Never leave empty if the tool needs input."
+
+def extract_args(arguments_json: str) -> str:
+    """Robustly extract the args string from the model's tool call JSON.
+
+    Small models (qwen3:1.7b) sometimes ignore the schema and invent parameter
+    names like num1/num2, a/b, n1, numbers, query, etc. instead of using 'args'.
+    This function normalises ALL of those cases into a single args string so the
+    tool script receives its expected command-line arguments regardless of what
+    the model decided to call the parameters.
+    """
+    try:
+        params = json.loads(arguments_json)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+
+    # Best case: model used the correct key
+    if "args" in params:
+        return str(params["args"]).strip()
+
+    # Model invented its own parameter names — join all values in declaration order.
+    # Skip keys that look like metadata (type, description, required, etc.).
+    SKIP_KEYS = {"type", "description", "required", "properties", "schema"}
+    values = [
+        str(v).strip()
+        for k, v in params.items()
+        if k not in SKIP_KEYS and str(v).strip()
+    ]
+    return " ".join(values)
+
 
 # ─────────────────────────────────────────────
 # WORKER SETUP
@@ -51,7 +78,6 @@ def build_tools_for_worker(category: str):
     for path, description in TOOLSETS.get(resolve_category(category), []):
         script_name = path.split("/")[-1].replace(".py", "")
         args_hint = _args_hint(description)
-        # Tools that genuinely take no arguments (e.g. get_cpu_usage) should not have args required
         needs_args = "args: none" not in description.lower()
         tools.append({
             "type": "function",
@@ -82,22 +108,20 @@ def run_tool(tool_name: str, args: str = "") -> str:
     return f"Unknown tool: {tool_name}"
 
 def summarise_output(output: str, max_chars: int = 600) -> str:
-    """Trim long tool output to protect orchestrator context window."""
     output = output.strip()
     if len(output) <= max_chars:
         return output
     return output[:max_chars] + f"\n... [truncated, {len(output)} chars total]"
 
 def run_worker(category: str, task: str) -> str:
-    """Spin up a worker agent for a single task. Returns a summary of what it did."""
     tools = build_tools_for_worker(category)
     if not tools:
         return f"No tools found for worker category: {category} (resolved: {resolve_category(category)})"
 
     worker_system = (
         f"You are a focused worker agent. You have ONE job: complete the task below using your tools.\n"
-        f"IMPORTANT: You MUST populate the args field with the correct value — never call a tool with empty args if it requires input.\n"
-        f"Do not explain, do not ask questions. Call the right tool immediately.\n\n"
+        f"IMPORTANT: Always put ALL arguments into the single 'args' field as a string, exactly as shown in the tool description.\n"
+        f"Do not invent extra parameter names. Do not explain. Call the right tool immediately.\n\n"
         f"Reference:\n{agent_context}"
     )
 
@@ -138,18 +162,17 @@ def run_worker(category: str, task: str) -> str:
         })
 
         for tc in msg.tool_calls:
-            args = json.loads(tc.function.arguments).get("args", "")
+            # Use extract_args instead of a plain dict get — handles invented param names
+            args = extract_args(tc.function.arguments)
             print(f"  \U0001F527 {tc.function.name}({args})")
             output = run_tool(tc.function.name, args)
             summary = summarise_output(output)
             print(f"  \U0001F4E4 {summary}")
-            # If the model called with empty args and got a usage hint back, make the error explicit
-            # so the model self-corrects on the next step rather than repeating the same mistake
             if summary.strip().startswith("Usage:"):
                 summary = (
-                    f"ERROR: You called {tc.function.name} with empty args. "
+                    f"ERROR: Tool {tc.function.name} needs arguments. "
                     f"{summary.strip()} "
-                    f"You MUST populate the args field with the correct value and call the tool again."
+                    f"Put all arguments into the 'args' field exactly as the example shows."
                 )
             messages.append({
                 "role": "tool",
