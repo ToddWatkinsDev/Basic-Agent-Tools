@@ -1,7 +1,6 @@
 import os, sys, shlex, json, subprocess
 from openai import OpenAI
 
-# Fix paths — must be before any local imports
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(project_root)
 sys.path.insert(0, project_root)
@@ -29,6 +28,27 @@ WORKER_CATEGORY_MAP = {
     "web":       "web_utilities",
 }
 
+# Fallback routing when the planner returns an empty plan []
+FALLBACK_KEYWORDS: list[tuple[list[str], str]] = [
+    (["ip address", "ip addr", "my ip"],                                         "system"),
+    (["cpu", "memory", "ram", "disk", "storage", "time", "date",
+      "clock", "os info", "processes"],                                           "system"),
+    (["ping", "dns", "download", "fetch url", "http"],                           "network"),
+    (["mean", "median", "mode", "sqrt", "calculate", "average",
+      "multiply", "divide", "add", "subtract", "standard deviation"],            "math"),
+    (["search", "scrape", "website"],                                             "web"),
+    (["file", "folder", "directory", "read", "write", "delete"],                 "file"),
+    (["csv", "dataset"],                                                          "data"),
+    (["plot", "chart", "graph", "visualise", "visualize"],                       "graphing"),
+]
+
+def guess_worker(message: str) -> str:
+    lower = message.lower()
+    for keywords, worker in FALLBACK_KEYWORDS:
+        if any(kw in lower for kw in keywords):
+            return worker
+    return "system"
+
 def resolve_category(name: str) -> str:
     return WORKER_CATEGORY_MAP.get(name, name)
 
@@ -39,7 +59,6 @@ def _args_hint(description: str) -> str:
     return "Provide the required arguments as a space-separated string. Never leave empty if the tool needs input."
 
 def extract_args(arguments_json: str) -> str:
-    """Normalise any parameter names the model invents into a single args string."""
     try:
         params = json.loads(arguments_json)
     except (json.JSONDecodeError, TypeError):
@@ -54,22 +73,20 @@ def extract_args(arguments_json: str) -> str:
     ]
     return " ".join(values)
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 # NO-ARG TOOL DIRECT DISPATCH
-# For tools that take no arguments, qwen3:1.7b reliably ignores tool_choice=required.
-# Instead of fighting the model, we detect these tasks via keyword matching and
-# run the tool directly — no LLM call needed.
-# ─────────────────────────────────────────────
+# qwen3:1.7b ignores tool_choice=required for no-arg tools, so we bypass the
+# model entirely and run matching tools directly via keyword detection.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Keyword sets that map to specific no-arg tools.
-# Keys are tool script names (without .py); values are lists of trigger words.
 NO_ARG_TOOL_KEYWORDS: dict[str, list[str]] = {
     "get_ip_address":         ["ip address", "ip addr", "my ip", "local ip"],
     "get_cpu_usage":          ["cpu usage", "cpu load", "processor usage", "cpu percent"],
     "get_memory_usage":       ["memory usage", "ram usage", "memory info", "ram info"],
     "get_disk_space":         ["disk space", "disk usage", "storage space", "free space"],
     "get_os_info":            ["os info", "operating system", "os name", "system info"],
-    "get_time":               ["current time", "what time", "date and time", "get time", "what is the time"],
+    "get_time":               ["current time", "what time", "date and time", "get time",
+                               "what is the time", "the time", "time is it"],
     "list_processes":         ["list processes", "running processes", "active processes"],
     "get_env_variables":      ["environment variables", "env variables", "env vars"],
     "get_network_interfaces": ["network interfaces", "network adapters", "interfaces"],
@@ -77,8 +94,6 @@ NO_ARG_TOOL_KEYWORDS: dict[str, list[str]] = {
 }
 
 def try_direct_dispatch(category: str, task: str) -> str | None:
-    """If the task clearly maps to a no-arg tool, run it directly and return the output.
-    Returns None if no direct match is found (falls through to normal LLM worker)."""
     task_lower = task.lower()
     resolved = resolve_category(category)
     available_tools = {
@@ -89,17 +104,18 @@ def try_direct_dispatch(category: str, task: str) -> str | None:
         if tool_name not in available_tools:
             continue
         if any(kw in task_lower for kw in keywords):
-            print(f"  \u26A1 Direct dispatch: {tool_name}()")
+            print(f"  \u26a1 Direct dispatch: {tool_name}()")
             output = run_tool(tool_name, "")
             result = output.strip()
-            print(f"  \U0001F4E4 {result}")
+            print(f"  \U0001f4e4 {result}")
             return result
     return None
 
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 # WORKER SETUP
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+
 def build_tools_for_worker(category: str):
     tools = []
     for path, description in TOOLSETS.get(resolve_category(category), []):
@@ -114,10 +130,7 @@ def build_tools_for_worker(category: str):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "args": {
-                            "type": "string",
-                            "description": args_hint
-                        }
+                        "args": {"type": "string", "description": args_hint}
                     },
                     "required": ["args"] if needs_args else []
                 }
@@ -141,7 +154,6 @@ def summarise_output(output: str, max_chars: int = 600) -> str:
     return output[:max_chars] + f"\n... [truncated, {len(output)} chars total]"
 
 def run_worker(category: str, task: str) -> str:
-    # Fast path: directly run no-arg tools without involving the LLM
     direct = try_direct_dispatch(category, task)
     if direct is not None:
         return direct
@@ -154,7 +166,7 @@ def run_worker(category: str, task: str) -> str:
         f"You are a focused worker agent. You have ONE job: complete the task below using your tools.\n"
         f"IMPORTANT: Always put ALL arguments into the single 'args' field as a string, exactly as shown in the tool description.\n"
         f"For tools that take no arguments, call them with an empty args string.\n"
-        f"Once you have the result, stop — do not call the same tool again.\n"
+        f"Once you have the result, stop \u2014 do not call the same tool again.\n"
         f"Do not explain. Call the right tool, get the result, then output your final answer.\n\n"
         f"Reference:\n{agent_context}"
     )
@@ -164,7 +176,7 @@ def run_worker(category: str, task: str) -> str:
         {"role": "user", "content": task}
     ]
 
-    print(f"\n  \U0001F916 Worker [{category}]: {task}")
+    print(f"\n  \U0001f916 Worker [{category}]: {task}")
 
     last_call = None
     last_result = None
@@ -172,10 +184,7 @@ def run_worker(category: str, task: str) -> str:
 
     max_steps = 8
     for step in range(max_steps):
-        if step == 0 or (step == 1 and forced_retry):
-            tool_choice = "required"
-        else:
-            tool_choice = "auto"
+        tool_choice = "required" if (step == 0 or (step == 1 and forced_retry)) else "auto"
 
         response = client.chat.completions.create(
             model="qwen3:1.7b",
@@ -192,7 +201,7 @@ def run_worker(category: str, task: str) -> str:
                 messages.append({"role": "assistant", "content": msg.content or ""})
                 messages.append({
                     "role": "user",
-                    "content": "You must call a tool to complete this task. Do not answer in text — use one of the tools provided right now."
+                    "content": "You must call a tool to complete this task. Do not answer in text \u2014 use one of the tools provided right now."
                 })
                 continue
             result = msg.content or (last_result if last_result else "Worker completed with no output.")
@@ -203,11 +212,8 @@ def run_worker(category: str, task: str) -> str:
             "role": "assistant",
             "content": msg.content or "",
             "tool_calls": [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments}
-                }
+                {"id": tc.id, "type": "function",
+                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                 for tc in msg.tool_calls
             ]
         })
@@ -220,10 +226,10 @@ def run_worker(category: str, task: str) -> str:
                 print(f"  \u2705 Worker done (repeat detected): {last_result[:120]}")
                 return last_result
 
-            print(f"  \U0001F527 {tc.function.name}({args})")
+            print(f"  \U0001f527 {tc.function.name}({args})")
             output = run_tool(tc.function.name, args)
             summary = summarise_output(output)
-            print(f"  \U0001F4E4 {summary}")
+            print(f"  \U0001f4e4 {summary}")
 
             if summary.strip().startswith("Usage:"):
                 summary = (
@@ -235,22 +241,20 @@ def run_worker(category: str, task: str) -> str:
                 last_call = this_call
                 last_result = summary
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": summary
-            })
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": summary})
 
     return last_result or "Worker reached max steps."
 
-# ─────────────────────────────────────────────
-# ORCHESTRATOR
-# ─────────────────────────────────────────────
-def orchestrate(user_message: str, show_thinking: bool = False):
-    print(f"\n\U0001F4E8 User: {user_message}")
-    print("\u2500" * 50)
 
-    print("\U0001F9E0 Orchestrator planning...\n")
+# ─────────────────────────────────────────────────────────────────────────────
+# ORCHESTRATOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+def orchestrate(user_message: str, show_thinking: bool = False):
+    print(f"\n\U0001f4e8 User: {user_message}")
+    print("\u2500" * 50)
+    print("\U0001f9e0 Orchestrator planning...\n")
+
     plan_response = client.chat.completions.create(
         model="qwen3:8b",
         messages=[
@@ -263,7 +267,7 @@ def orchestrate(user_message: str, show_thinking: bool = False):
     if show_thinking:
         thinking = getattr(plan_response.choices[0].message, "reasoning", None)
         if thinking:
-            print(f"\U0001F4AD Thinking:\n{thinking}\n")
+            print(f"\U0001f4ad Thinking:\n{thinking}\n")
 
     raw_plan = plan_response.choices[0].message.content or ""
     clean_plan = raw_plan.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -271,17 +275,23 @@ def orchestrate(user_message: str, show_thinking: bool = False):
     try:
         plan = json.loads(clean_plan)
     except json.JSONDecodeError:
-        print(f"\u274C Orchestrator returned invalid plan:\n{raw_plan}")
+        print(f"\u274c Orchestrator returned invalid plan:\n{raw_plan}")
         return
 
-    print(f"\U0001F4CB Plan ({len(plan)} steps):")
+    # Empty plan fallback: guess the right worker from user message keywords
+    if not plan:
+        guessed = guess_worker(user_message)
+        print(f"\u26a0\ufe0f  Planner returned empty plan. Falling back to [{guessed}] worker.")
+        plan = [{"worker": guessed, "task": user_message, "depends_on": -1}]
+
+    print(f"\U0001f4cb Plan ({len(plan)} steps):")
     for i, step in enumerate(plan):
         print(f"  {i+1}. [{step['worker']}] {step['task']}")
     print("\u2500" * 50)
 
     results = {}
     for i, step in enumerate(plan):
-        print(f"\n\u25B6 Step {i+1}/{len(plan)}")
+        print(f"\n\u25b6 Step {i+1}/{len(plan)}")
         task = step["task"]
         dep = step.get("depends_on", -1)
         if dep >= 0 and dep in results:
@@ -290,12 +300,12 @@ def orchestrate(user_message: str, show_thinking: bool = False):
         results[i] = summarise_output(result)
         print("\u2500" * 50)
 
-    print("\n\U0001F9E0 Orchestrator summarising...\n")
+    print("\n\U0001f9e0 Orchestrator summarising...\n")
     summary_messages = [
-        {"role": "system", "content": "You are a helpful assistant. Summarise what was accomplished based on the results below. Be concise."},
+        {"role": "system", "content": "Summarise what was accomplished. Be concise."},
         {"role": "user", "content": user_message},
-        {"role": "assistant", "content": f"Here are the results from each step:\n{json.dumps(results, indent=2)}"},
-        {"role": "user", "content": "Please give me a brief summary of what was done and the key findings."}
+        {"role": "assistant", "content": f"Results:\n{json.dumps(results, indent=2)}"},
+        {"role": "user", "content": "Brief summary of what was done and key findings."}
     ]
     final = client.chat.completions.create(
         model="qwen3:8b",
