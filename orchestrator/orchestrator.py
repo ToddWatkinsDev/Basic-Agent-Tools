@@ -76,8 +76,6 @@ def extract_args(arguments_json: str) -> str:
 
 # ─────────────────────────────────────────────
 # NO-ARG TOOL DIRECT DISPATCH
-# Bypasses the LLM for no-argument tools by matching task keywords.
-# Searches ALL toolset categories so misrouted workers still hit the right tool.
 # ─────────────────────────────────────────────
 
 NO_ARG_TOOL_KEYWORDS: dict[str, list[str]] = {
@@ -93,7 +91,6 @@ NO_ARG_TOOL_KEYWORDS: dict[str, list[str]] = {
     "get_env_variables":      ["environment variables", "env variables", "env vars"],
 }
 
-# Pre-build a flat map of tool_name -> script path across ALL categories
 ALL_TOOLS: dict[str, str] = {
     path.split("/")[-1].replace(".py", ""): path
     for entries in TOOLSETS.values()
@@ -101,9 +98,6 @@ ALL_TOOLS: dict[str, str] = {
 }
 
 def try_direct_dispatch(task: str) -> str | None:
-    """If the task matches a no-arg tool keyword, run it directly.
-    Searches across ALL categories — worker misrouting doesn't matter.
-    Returns None if no match (falls through to LLM worker)."""
     task_lower = task.lower()
     for tool_name, keywords in NO_ARG_TOOL_KEYWORDS.items():
         if tool_name not in ALL_TOOLS:
@@ -158,7 +152,6 @@ def summarise_output(output: str, max_chars: int = 600) -> str:
     return output[:max_chars] + f"\n... [truncated, {len(output)} chars total]"
 
 def run_worker(category: str, task: str) -> str:
-    # Fast path: directly run no-arg tools without involving the LLM
     direct = try_direct_dispatch(task)
     if direct is not None:
         return direct
@@ -167,8 +160,6 @@ def run_worker(category: str, task: str) -> str:
     if not tools:
         return f"No tools found for worker category: {category} (resolved: {resolve_category(category)})"
 
-    # Use a specialised prompt if the task matches a known intent,
-    # otherwise fall back to the generic worker prompt.
     intent_prompt = detect_intent_prompt(task)
     if intent_prompt:
         print(f"  \U0001f4cc Intent prompt matched for task: {task[:60]}")
@@ -289,7 +280,6 @@ def orchestrate(user_message: str, show_thinking: bool = False):
         print(f"\u274c Orchestrator returned invalid plan:\n{raw_plan}")
         return
 
-    # Empty plan fallback: guess the right worker from user message keywords
     if not plan:
         guessed = guess_worker(user_message)
         print(f"\u26a0\ufe0f  Planner returned empty plan. Falling back to [{guessed}] worker.")
