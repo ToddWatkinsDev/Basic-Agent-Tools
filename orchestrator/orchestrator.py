@@ -30,10 +30,10 @@ WORKER_CATEGORY_MAP = {
 
 # Fallback routing when the planner returns an empty plan []
 FALLBACK_KEYWORDS: list[tuple[list[str], str]] = [
-    (["ip address", "ip addr", "my ip"],                                         "system"),
+    (["ip address", "ip addr", "my ip"],                                         "network"),
+    (["ping", "dns", "download", "fetch url", "http"],                           "network"),
     (["cpu", "memory", "ram", "disk", "storage", "time", "date",
       "clock", "os info", "processes"],                                           "system"),
-    (["ping", "dns", "download", "fetch url", "http"],                           "network"),
     (["mean", "median", "mode", "sqrt", "calculate", "average",
       "multiply", "divide", "add", "subtract", "standard deviation"],            "math"),
     (["search", "scrape", "website"],                                             "web"),
@@ -73,14 +73,15 @@ def extract_args(arguments_json: str) -> str:
     ]
     return " ".join(values)
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # NO-ARG TOOL DIRECT DISPATCH
-# qwen3:1.7b ignores tool_choice=required for no-arg tools, so we bypass the
-# model entirely and run matching tools directly via keyword detection.
-# ─────────────────────────────────────────────────────────────────────────────
+# Bypasses the LLM for no-argument tools by matching task keywords.
+# Searches ALL toolset categories so misrouted workers still hit the right tool.
+# ─────────────────────────────────────────────
 
 NO_ARG_TOOL_KEYWORDS: dict[str, list[str]] = {
     "get_ip_address":         ["ip address", "ip addr", "my ip", "local ip"],
+    "get_network_interfaces": ["network interfaces", "network adapters"],
     "get_cpu_usage":          ["cpu usage", "cpu load", "processor usage", "cpu percent"],
     "get_memory_usage":       ["memory usage", "ram usage", "memory info", "ram info"],
     "get_disk_space":         ["disk space", "disk usage", "storage space", "free space"],
@@ -89,19 +90,22 @@ NO_ARG_TOOL_KEYWORDS: dict[str, list[str]] = {
                                "what is the time", "the time", "time is it"],
     "list_processes":         ["list processes", "running processes", "active processes"],
     "get_env_variables":      ["environment variables", "env variables", "env vars"],
-    "get_network_interfaces": ["network interfaces", "network adapters", "interfaces"],
-    "get_local_ip":           ["local ip", "machine ip"],
 }
 
-def try_direct_dispatch(category: str, task: str) -> str | None:
+# Pre-build a flat map of tool_name -> script path across ALL categories
+ALL_TOOLS: dict[str, str] = {
+    path.split("/")[-1].replace(".py", ""): path
+    for entries in TOOLSETS.values()
+    for path, _ in entries
+}
+
+def try_direct_dispatch(task: str) -> str | None:
+    """If the task matches a no-arg tool keyword, run it directly.
+    Searches across ALL categories — worker misrouting doesn't matter.
+    Returns None if no match (falls through to LLM worker)."""
     task_lower = task.lower()
-    resolved = resolve_category(category)
-    available_tools = {
-        path.split("/")[-1].replace(".py", "")
-        for path, _ in TOOLSETS.get(resolved, [])
-    }
     for tool_name, keywords in NO_ARG_TOOL_KEYWORDS.items():
-        if tool_name not in available_tools:
+        if tool_name not in ALL_TOOLS:
             continue
         if any(kw in task_lower for kw in keywords):
             print(f"  \u26a1 Direct dispatch: {tool_name}()")
@@ -112,9 +116,9 @@ def try_direct_dispatch(category: str, task: str) -> str | None:
     return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # WORKER SETUP
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 def build_tools_for_worker(category: str):
     tools = []
@@ -139,13 +143,12 @@ def build_tools_for_worker(category: str):
     return tools
 
 def run_tool(tool_name: str, args: str = "") -> str:
-    for entries in TOOLSETS.values():
-        for path, _ in entries:
-            if path.split("/")[-1].replace(".py", "") == tool_name:
-                cmd = ["python", path] + (shlex.split(args) if args else [])
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                return result.stdout or result.stderr
-    return f"Unknown tool: {tool_name}"
+    path = ALL_TOOLS.get(tool_name)
+    if not path:
+        return f"Unknown tool: {tool_name}"
+    cmd = ["python", path] + (shlex.split(args) if args else [])
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    return result.stdout or result.stderr
 
 def summarise_output(output: str, max_chars: int = 600) -> str:
     output = output.strip()
@@ -154,7 +157,8 @@ def summarise_output(output: str, max_chars: int = 600) -> str:
     return output[:max_chars] + f"\n... [truncated, {len(output)} chars total]"
 
 def run_worker(category: str, task: str) -> str:
-    direct = try_direct_dispatch(category, task)
+    # Fast path: directly run no-arg tools without involving the LLM
+    direct = try_direct_dispatch(task)
     if direct is not None:
         return direct
 
@@ -246,9 +250,9 @@ def run_worker(category: str, task: str) -> str:
     return last_result or "Worker reached max steps."
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # ORCHESTRATOR
-# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 def orchestrate(user_message: str, show_thinking: bool = False):
     print(f"\n\U0001f4e8 User: {user_message}")
