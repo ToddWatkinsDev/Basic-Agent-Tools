@@ -3,6 +3,10 @@
 # Each entry: "intent_name": ([keyword_list], "prompt string")
 # Add new intents here without touching orchestrator.py.
 
+# TODO: add intents for remaining worker categories (data, file, graphing, web, ml, reporting)
+# TODO: consider loading intents from a JSON/YAML file so non-devs can edit without touching Python
+# TODO: support fuzzy/similarity matching instead of exact substring keywords
+
 INTENT_PROMPTS: dict[str, tuple[list[str], str]] = {
     "system_info": (
         [
@@ -56,12 +60,16 @@ INTENT_PROMPTS: dict[str, tuple[list[str], str]] = {
             "After all four results are collected, stop and summarise the network status clearly.\n"
         ),
     ),
+
+    # TODO: add "data_summary" intent — auto-run aggregate_stats + calculate_correlations on a given CSV
+    # TODO: add "web_search" intent — run search_web then scrape_html on the top result
 }
 
 
 def detect_intent_prompt(message: str) -> str | None:
     """Return a specialised worker system prompt if the message matches a known intent.
     Returns None if no intent matches (caller falls back to default prompt)."""
+    # TODO: support multiple intent matches (e.g. return a merged/combined prompt)
     lower = message.lower()
     for _, (keywords, prompt) in INTENT_PROMPTS.items():
         if any(kw in lower for kw in keywords):

@@ -30,6 +30,7 @@ WORKER_CATEGORY_MAP = {
 }
 
 # Fallback routing when the planner returns an empty plan []
+# TODO: replace keyword fallback with a lightweight classifier or embeddings-based router
 FALLBACK_KEYWORDS: list[tuple[list[str], str]] = [
     (["ip address", "ip addr", "my ip"],                                         "network"),
     (["ping", "dns", "download", "fetch url", "http"],                           "network"),
@@ -78,6 +79,8 @@ def extract_args(arguments_json: str) -> str:
 # NO-ARG TOOL DIRECT DISPATCH
 # ─────────────────────────────────────────────
 
+# TODO: extend NO_ARG_TOOL_KEYWORDS to cover all zero-argument tools automatically
+#       by inspecting toolsets.py for entries with "Args: none"
 NO_ARG_TOOL_KEYWORDS: dict[str, list[str]] = {
     "get_ip_address":         ["ip address", "ip addr", "my ip", "local ip"],
     "get_network_interfaces": ["network interfaces", "network adapters"],
@@ -173,6 +176,9 @@ def run_worker(category: str, task: str) -> str:
         f"Reference:\n{agent_context}"
     )
 
+    # TODO: add per-category default prompts (WORKER_PROMPTS dict) for more precise
+    #       guidance when no intent matches — e.g. math worker gets stricter args format hints
+
     messages = [
         {"role": "system", "content": worker_system},
         {"role": "user", "content": task}
@@ -184,6 +190,7 @@ def run_worker(category: str, task: str) -> str:
     last_result = None
     forced_retry = False
 
+    # TODO: make max_steps configurable via CLI flag or config file
     max_steps = 8
     for step in range(max_steps):
         tool_choice = "required" if (step == 0 or (step == 1 and forced_retry)) else "auto"
@@ -285,6 +292,9 @@ def orchestrate(user_message: str, show_thinking: bool = False):
         print(f"\u26a0\ufe0f  Planner returned empty plan. Falling back to [{guessed}] worker.")
         plan = [{"worker": guessed, "task": user_message, "depends_on": -1}]
 
+    # TODO: add MAX_PLAN_STEPS cap to prevent runaway plans from the planner LLM
+    # TODO: add plan validation — warn if a worker category name is not in WORKER_CATEGORY_MAP
+
     print(f"\U0001f4cb Plan ({len(plan)} steps):")
     for i, step in enumerate(plan):
         print(f"  {i+1}. [{step['worker']}] {step['task']}")
@@ -314,6 +324,9 @@ def orchestrate(user_message: str, show_thinking: bool = False):
         extra_body={"think": False}
     )
     print(f"\n\u2705 Final Summary:\n{final.choices[0].message.content}")
+
+    # TODO: persist results to a log file (output/session_log.json) for session history
+    # TODO: add --interactive / chat mode so the user can continue from the last result
 
 
 if __name__ == "__main__":
