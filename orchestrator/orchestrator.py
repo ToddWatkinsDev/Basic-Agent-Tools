@@ -293,7 +293,7 @@ def orchestrate(user_message: str, show_thinking: bool = False):
         plan = [{"worker": guessed, "task": user_message, "depends_on": -1}]
 
     # TODO: add MAX_PLAN_STEPS cap to prevent runaway plans from the planner LLM
-    # TODO: add plan validation — warn if a worker category name is not in WORKER_CATEGORY_MAP
+    # TODO: add plan validation - warn if a worker category name is not in WORKER_CATEGORY_MAP
 
     print(f"\U0001f4cb Plan ({len(plan)} steps):")
     for i, step in enumerate(plan):
