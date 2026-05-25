@@ -54,12 +54,10 @@ def extract_args(arguments_json: str) -> str:
     except (json.JSONDecodeError, TypeError):
         return ""
 
-    # Best case: model used the correct key
     if "args" in params:
         return str(params["args"]).strip()
 
     # Model invented its own parameter names — join all values in declaration order.
-    # Skip keys that look like metadata (type, description, required, etc.).
     SKIP_KEYS = {"type", "description", "required", "properties", "schema"}
     values = [
         str(v).strip()
@@ -121,7 +119,8 @@ def run_worker(category: str, task: str) -> str:
     worker_system = (
         f"You are a focused worker agent. You have ONE job: complete the task below using your tools.\n"
         f"IMPORTANT: Always put ALL arguments into the single 'args' field as a string, exactly as shown in the tool description.\n"
-        f"Do not invent extra parameter names. Do not explain. Call the right tool immediately.\n\n"
+        f"Once you have the result, stop — do not call the same tool again.\n"
+        f"Do not explain. Call the right tool, get the result, then output your final answer.\n\n"
         f"Reference:\n{agent_context}"
     )
 
@@ -132,7 +131,10 @@ def run_worker(category: str, task: str) -> str:
 
     print(f"\n  \U0001F916 Worker [{category}]: {task}")
 
-    max_steps = 5
+    last_call = None   # (tool_name, args) of the most recent successful tool call
+    last_result = None # last non-empty tool output
+
+    max_steps = 8
     for step in range(max_steps):
         response = client.chat.completions.create(
             model="qwen3:1.7b",
@@ -144,7 +146,7 @@ def run_worker(category: str, task: str) -> str:
         msg = response.choices[0].message
 
         if not msg.tool_calls:
-            result = msg.content or "Worker completed with no output."
+            result = msg.content or (last_result if last_result else "Worker completed with no output.")
             print(f"  \u2705 Worker done: {result[:120]}")
             return result
 
@@ -162,25 +164,37 @@ def run_worker(category: str, task: str) -> str:
         })
 
         for tc in msg.tool_calls:
-            # Use extract_args instead of a plain dict get — handles invented param names
             args = extract_args(tc.function.arguments)
+            this_call = (tc.function.name, args)
+
+            # Detect repeat: model is calling the exact same tool+args again after
+            # already receiving a valid result — it's stuck. Return the last result.
+            if this_call == last_call and last_result and not last_result.strip().startswith("ERROR"):
+                print(f"  \u2705 Worker done (repeat detected): {last_result[:120]}")
+                return last_result
+
             print(f"  \U0001F527 {tc.function.name}({args})")
             output = run_tool(tc.function.name, args)
             summary = summarise_output(output)
             print(f"  \U0001F4E4 {summary}")
+
             if summary.strip().startswith("Usage:"):
                 summary = (
                     f"ERROR: Tool {tc.function.name} needs arguments. "
                     f"{summary.strip()} "
                     f"Put all arguments into the 'args' field exactly as the example shows."
                 )
+            else:
+                last_call = this_call
+                last_result = summary
+
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
                 "content": summary
             })
 
-    return "Worker reached max steps."
+    return last_result or "Worker reached max steps."
 
 # ─────────────────────────────────────────────
 # ORCHESTRATOR
