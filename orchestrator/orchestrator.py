@@ -54,6 +54,48 @@ def extract_args(arguments_json: str) -> str:
     ]
     return " ".join(values)
 
+# ─────────────────────────────────────────────
+# NO-ARG TOOL DIRECT DISPATCH
+# For tools that take no arguments, qwen3:1.7b reliably ignores tool_choice=required.
+# Instead of fighting the model, we detect these tasks via keyword matching and
+# run the tool directly — no LLM call needed.
+# ─────────────────────────────────────────────
+
+# Keyword sets that map to specific no-arg tools.
+# Keys are tool script names (without .py); values are lists of trigger words.
+NO_ARG_TOOL_KEYWORDS: dict[str, list[str]] = {
+    "get_ip_address":         ["ip address", "ip addr", "my ip", "local ip"],
+    "get_cpu_usage":          ["cpu usage", "cpu load", "processor usage", "cpu percent"],
+    "get_memory_usage":       ["memory usage", "ram usage", "memory info", "ram info"],
+    "get_disk_space":         ["disk space", "disk usage", "storage space", "free space"],
+    "get_os_info":            ["os info", "operating system", "os name", "system info"],
+    "get_time":               ["current time", "what time", "date and time", "get time", "what is the time"],
+    "list_processes":         ["list processes", "running processes", "active processes"],
+    "get_env_variables":      ["environment variables", "env variables", "env vars"],
+    "get_network_interfaces": ["network interfaces", "network adapters", "interfaces"],
+    "get_local_ip":           ["local ip", "machine ip"],
+}
+
+def try_direct_dispatch(category: str, task: str) -> str | None:
+    """If the task clearly maps to a no-arg tool, run it directly and return the output.
+    Returns None if no direct match is found (falls through to normal LLM worker)."""
+    task_lower = task.lower()
+    resolved = resolve_category(category)
+    available_tools = {
+        path.split("/")[-1].replace(".py", "")
+        for path, _ in TOOLSETS.get(resolved, [])
+    }
+    for tool_name, keywords in NO_ARG_TOOL_KEYWORDS.items():
+        if tool_name not in available_tools:
+            continue
+        if any(kw in task_lower for kw in keywords):
+            print(f"  \u26A1 Direct dispatch: {tool_name}()")
+            output = run_tool(tool_name, "")
+            result = output.strip()
+            print(f"  \U0001F4E4 {result}")
+            return result
+    return None
+
 
 # ─────────────────────────────────────────────
 # WORKER SETUP
@@ -99,6 +141,11 @@ def summarise_output(output: str, max_chars: int = 600) -> str:
     return output[:max_chars] + f"\n... [truncated, {len(output)} chars total]"
 
 def run_worker(category: str, task: str) -> str:
+    # Fast path: directly run no-arg tools without involving the LLM
+    direct = try_direct_dispatch(category, task)
+    if direct is not None:
+        return direct
+
     tools = build_tools_for_worker(category)
     if not tools:
         return f"No tools found for worker category: {category} (resolved: {resolve_category(category)})"
@@ -121,12 +168,10 @@ def run_worker(category: str, task: str) -> str:
 
     last_call = None
     last_result = None
-    forced_retry = False  # have we already sent the tool-call reminder?
+    forced_retry = False
 
     max_steps = 8
     for step in range(max_steps):
-        # On step 0 always require a tool call.
-        # On step 1 also require if the model dodged on step 0 (forced_retry flag).
         if step == 0 or (step == 1 and forced_retry):
             tool_choice = "required"
         else:
@@ -142,21 +187,14 @@ def run_worker(category: str, task: str) -> str:
         msg = response.choices[0].message
 
         if not msg.tool_calls:
-            # Step 0 with no tool call — model responded with text instead.
-            # Append a stern reminder and force tool_choice=required on next step.
             if step == 0 and not forced_retry:
                 forced_retry = True
                 messages.append({"role": "assistant", "content": msg.content or ""})
                 messages.append({
                     "role": "user",
-                    "content": (
-                        "You must call a tool to complete this task. "
-                        "Do not answer in text — use one of the tools provided right now."
-                    )
+                    "content": "You must call a tool to complete this task. Do not answer in text — use one of the tools provided right now."
                 })
                 continue
-
-            # Model genuinely finished — return its text answer (or last tool result)
             result = msg.content or (last_result if last_result else "Worker completed with no output.")
             print(f"  \u2705 Worker done: {result[:120]}")
             return result
@@ -178,7 +216,6 @@ def run_worker(category: str, task: str) -> str:
             args = extract_args(tc.function.arguments)
             this_call = (tc.function.name, args)
 
-            # Repeat-call detection: already have a good result, model is looping
             if this_call == last_call and last_result and not last_result.strip().startswith("ERROR"):
                 print(f"  \u2705 Worker done (repeat detected): {last_result[:120]}")
                 return last_result
