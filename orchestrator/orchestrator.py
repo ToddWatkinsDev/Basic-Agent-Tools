@@ -17,7 +17,6 @@ with open("orchestrator/ORCHESTRATOR_PROMPT.md", "r", encoding="utf-8") as f:
     ORCHESTRATOR_PROMPT = f.read()
 
 # Map the short worker names used in ORCHESTRATOR_PROMPT to TOOLSETS keys.
-# This lets the prompt stay readable while toolsets.py uses descriptive names.
 WORKER_CATEGORY_MAP = {
     "archive":   "archive_utilities",
     "data":      "data_utilities",
@@ -35,6 +34,14 @@ def resolve_category(name: str) -> str:
     """Accept either the short prompt name or the full toolsets key."""
     return WORKER_CATEGORY_MAP.get(name, name)
 
+def _args_hint(description: str) -> str:
+    """Extract the Args/Example line from a tool description for use as the args field hint.
+    Small models fill args correctly when the description is tool-specific rather than generic."""
+    for line in description.split("."):
+        if "Args:" in line or "Example:" in line:
+            return line.strip()
+    return "Provide the required arguments as a space-separated string. Never leave empty if the tool needs input."
+
 # ─────────────────────────────────────────────
 # WORKER SETUP
 # ─────────────────────────────────────────────
@@ -43,6 +50,9 @@ def build_tools_for_worker(category: str):
     tools = []
     for path, description in TOOLSETS.get(resolve_category(category), []):
         script_name = path.split("/")[-1].replace(".py", "")
+        args_hint = _args_hint(description)
+        # Tools that genuinely take no arguments (e.g. get_cpu_usage) should not have args required
+        needs_args = "args: none" not in description.lower()
         tools.append({
             "type": "function",
             "function": {
@@ -53,10 +63,10 @@ def build_tools_for_worker(category: str):
                     "properties": {
                         "args": {
                             "type": "string",
-                            "description": "Command-line arguments exactly as described above. Must not be empty if the tool requires input."
+                            "description": args_hint
                         }
                     },
-                    "required": []
+                    "required": ["args"] if needs_args else []
                 }
             }
         })
@@ -86,6 +96,7 @@ def run_worker(category: str, task: str) -> str:
 
     worker_system = (
         f"You are a focused worker agent. You have ONE job: complete the task below using your tools.\n"
+        f"IMPORTANT: You MUST populate the args field with the correct value — never call a tool with empty args if it requires input.\n"
         f"Do not explain, do not ask questions. Call the right tool immediately.\n\n"
         f"Reference:\n{agent_context}"
     )
@@ -132,6 +143,14 @@ def run_worker(category: str, task: str) -> str:
             output = run_tool(tc.function.name, args)
             summary = summarise_output(output)
             print(f"  \U0001F4E4 {summary}")
+            # If the model called with empty args and got a usage hint back, make the error explicit
+            # so the model self-corrects on the next step rather than repeating the same mistake
+            if summary.strip().startswith("Usage:"):
+                summary = (
+                    f"ERROR: You called {tc.function.name} with empty args. "
+                    f"{summary.strip()} "
+                    f"You MUST populate the args field with the correct value and call the tool again."
+                )
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
@@ -147,10 +166,9 @@ def orchestrate(user_message: str, show_thinking: bool = False):
     print(f"\n\U0001F4E8 User: {user_message}")
     print("\u2500" * 50)
 
-    # Step 1: Ask orchestrator to produce a plan
     print("\U0001F9E0 Orchestrator planning...\n")
     plan_response = client.chat.completions.create(
-        model="qwen3:8b",   # swap to qwen3:4b if VRAM is tight
+        model="qwen3:8b",
         messages=[
             {"role": "system", "content": ORCHESTRATOR_PROMPT},
             {"role": "user", "content": user_message}
@@ -164,8 +182,6 @@ def orchestrate(user_message: str, show_thinking: bool = False):
             print(f"\U0001F4AD Thinking:\n{thinking}\n")
 
     raw_plan = plan_response.choices[0].message.content or ""
-
-    # Strip markdown code fences if the model wraps output in ```json
     clean_plan = raw_plan.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
 
     try:
@@ -179,22 +195,17 @@ def orchestrate(user_message: str, show_thinking: bool = False):
         print(f"  {i+1}. [{step['worker']}] {step['task']}")
     print("\u2500" * 50)
 
-    # Step 2: Execute plan step by step
     results = {}
     for i, step in enumerate(plan):
         print(f"\n\u25B6 Step {i+1}/{len(plan)}")
-
-        # Inject previous step's result into task if there's a dependency
         task = step["task"]
         dep = step.get("depends_on", -1)
         if dep >= 0 and dep in results:
             task += f"\n\nContext from previous step:\n{results[dep]}"
-
         result = run_worker(step["worker"], task)
         results[i] = summarise_output(result)
         print("\u2500" * 50)
 
-    # Step 3: Ask orchestrator for a final summary
     print("\n\U0001F9E0 Orchestrator summarising...\n")
     summary_messages = [
         {"role": "system", "content": "You are a helpful assistant. Summarise what was accomplished based on the results below. Be concise."},
@@ -215,6 +226,5 @@ if __name__ == "__main__":
     show_thinking = "--think" in args
     if show_thinking:
         args.remove("--think")
-
     user_input = " ".join(args) or input("You: ")
     orchestrate(user_input, show_thinking=show_thinking)
