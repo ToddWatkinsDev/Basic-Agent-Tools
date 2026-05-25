@@ -6,6 +6,7 @@ os.chdir(project_root)
 sys.path.insert(0, project_root)
 
 from toolsets import TOOLSETS
+from orchestrator.intent_prompts import detect_intent_prompt
 
 client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
 
@@ -166,12 +167,18 @@ def run_worker(category: str, task: str) -> str:
     if not tools:
         return f"No tools found for worker category: {category} (resolved: {resolve_category(category)})"
 
-    worker_system = (
-        f"You are a focused worker agent. You have ONE job: complete the task below using your tools.\n"
-        f"IMPORTANT: Always put ALL arguments into the single 'args' field as a string, exactly as shown in the tool description.\n"
-        f"For tools that take no arguments, call them with an empty args string.\n"
-        f"Once you have the result, stop \u2014 do not call the same tool again.\n"
-        f"Do not explain. Call the right tool, get the result, then output your final answer.\n\n"
+    # Use a specialised prompt if the task matches a known intent,
+    # otherwise fall back to the generic worker prompt.
+    intent_prompt = detect_intent_prompt(task)
+    if intent_prompt:
+        print(f"  \U0001f4cc Intent prompt matched for task: {task[:60]}")
+
+    worker_system = intent_prompt or (
+        "You are a focused worker agent. You have ONE job: complete the task below using your tools.\n"
+        "IMPORTANT: Always put ALL arguments into the single 'args' field as a string, exactly as shown in the tool description.\n"
+        "For tools that take no arguments, call them with an empty args string.\n"
+        "Once you have the result, stop \u2014 do not call the same tool again.\n"
+        "Do not explain. Call the right tool, get the result, then output your final answer.\n\n"
         f"Reference:\n{agent_context}"
     )
 
